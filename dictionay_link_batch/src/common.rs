@@ -7,7 +7,6 @@ pub use std::{
     time::Duration,
 };
 
-
 pub use log::{error, info, warn};
 
 pub use anyhow::{Context, Result, anyhow};

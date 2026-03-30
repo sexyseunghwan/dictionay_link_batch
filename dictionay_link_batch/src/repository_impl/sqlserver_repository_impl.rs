@@ -6,21 +6,21 @@
 //! # Architecture
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────────┐
+//! ┌──────────────────────────────────────────────────────────────────┐
 //! │                  SqlServerRepositoryImpl                         │
-//! ├─────────────────────────────────────────────────────────────────┤
+//! ├──────────────────────────────────────────────────────────────────┤
 //! │                                                                  │
-//! │  ┌──────────────────────────────────────────────────────────┐   │
-//! │  │         Connection Config (built from env vars)          │   │
-//! │  │              host / port / database / auth               │   │
-//! │  └──────────────────────────────────────────────────────────┘   │
+//! │  ┌──────────────────────────────────────────────────────────┐    │
+//! │  │         Connection Config (built from env vars)          │    │
+//! │  │              host / port / database / auth               │    │
+//! │  └──────────────────────────────────────────────────────────┘    │
 //! │                            │                                     │
-//! │              ┌─────────────┴─────────────┐                      │
-//! │              ▼                           ▼                      │
-//! │     ┌─────────────────┐       ┌─────────────────┐              │
-//! │     │  get_client()   │       │test_connection() │              │
-//! │     │ (per operation) │       │  (health check)  │              │
-//! │     └─────────────────┘       └─────────────────┘              │
+//! │              ┌─────────────┴─────────────┐                       │
+//! │              ▼                           ▼                       │
+//! │     ┌─────────────────┐       ┌─────────────────┐                │
+//! │     │  get_client()   │       │test_connection() │               │
+//! │     │ (per operation) │       │  (health check)  │               │
+//! │     └─────────────────┘       └─────────────────┘                │
 //! │                                                                  │
 //! └──────────────────────────────────────────────────────────────────┘
 //! ```
@@ -28,30 +28,25 @@
 //! # Connection Strategy
 //!
 //! A new `Client` is created per operation via `get_client()`.
-//! Connection settings are read once at startup in `new()` and stored as fields.
+//! Connection settings are cloned from [`APP_CONFIG`] in `new()` and stored as fields.
 //!
 //! # Environment Variables
 //!
-//! | Variable                        | Description                          | Example         |
-//! |---------------------------------|--------------------------------------|-----------------|
-//! | `MSSQL_SERVER`                  | SQL Server host                      | `localhost`     |
-//! | `MSSQL_PORT`                    | SQL Server port                      | `1433`          |
-//! | `MSSQL_DATABASE`                | Target database name                 | `your_database` |
-//! | `MSSQL_USERNAME`                | Login username                       | `sa`            |
-//! | `MSSQL_PASSWORD`                | Login password                       | `your_password` |
-//! | `MSSQL_TRUST_SERVER_CERTIFICATE`| Whether to trust the server cert     | `true`          |
+//! All variables are loaded through [`AppConfig`]. See [`app_config`] for the full list.
 
 use crate::common::*;
+use crate::config::app_config::*;
+use crate::dtos::sample_proc_dto::{SampleProcRequestDto, SampleProcResponseDto};
 use crate::repository::sqlserver_repository::SqlServerRepository;
 
 use async_trait::async_trait;
-use mssql_client::{Client, Config, Credentials, state::Ready};
 use getset::Getters;
+use mssql_client::{Client, Config, Credentials, state::Ready};
 
 /// Concrete implementation of the SQL Server repository.
 ///
-/// `SqlServerRepositoryImpl` reads connection settings from environment variables
-/// once at construction time and builds a fresh `Client` for each operation.
+/// `SqlServerRepositoryImpl` clones connection settings from the global [`APP_CONFIG`]
+/// at construction time and builds a fresh `Client` for each operation.
 ///
 /// # Thread Safety
 ///
@@ -64,14 +59,7 @@ use getset::Getters;
 /// use crate::repository_impl::sqlserver_repository_impl::SqlServerRepositoryImpl;
 /// use crate::repository::sqlserver_repository::SqlServerRepository;
 ///
-/// // Ensure env vars are set (e.g. via .env):
-/// // MSSQL_SERVER=localhost
-/// // MSSQL_PORT=1433
-/// // MSSQL_DATABASE=your_database
-/// // MSSQL_USERNAME=sa
-/// // MSSQL_PASSWORD=your_password
-///
-/// let repo = SqlServerRepositoryImpl::new()?;
+/// let repo = SqlServerRepositoryImpl::new();
 /// repo.test_connection().await?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
@@ -93,44 +81,23 @@ pub struct SqlServerRepositoryImpl {
 }
 
 impl SqlServerRepositoryImpl {
-    /// Creates a new `SqlServerRepositoryImpl` by reading connection settings
-    /// from environment variables.
+    /// Creates a new `SqlServerRepositoryImpl` by cloning connection settings
+    /// from the global [`APP_CONFIG`].
     ///
-    /// # Environment Variables
-    ///
-    /// * `MSSQL_SERVER`                  - Required. Hostname or IP of the SQL Server
-    /// * `MSSQL_PORT`                    - Required. Port number (e.g. `1433`)
-    /// * `MSSQL_DATABASE`                - Required. Target database name
-    /// * `MSSQL_USERNAME`                - Required. Login username
-    /// * `MSSQL_PASSWORD`                - Required. Login password
-    /// * `MSSQL_TRUST_SERVER_CERTIFICATE`- Optional. Defaults to `"true"`
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(SqlServerRepositoryImpl)` when all required variables are present
-    /// and `MSSQL_PORT` can be parsed as a valid `u16`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any required environment variable is missing
-    /// or if `MSSQL_PORT` is not a valid number.
-    pub fn new() -> Result<Self> {
-        // Read all required connection parameters from the environment
-        let server: String   = env::var("MSSQL_SERVER").context("MSSQL_SERVER not set")?;
-        let port: u16 = env::var("MSSQL_PORT")
-            .context("MSSQL_PORT not set")?
-            .parse()
-            .context("MSSQL_PORT must be a valid number")?;
-        let database: String = env::var("MSSQL_DATABASE").context("MSSQL_DATABASE not set")?;
-        let username: String = env::var("MSSQL_USERNAME").context("MSSQL_USERNAME not set")?;
-        let password: String = env::var("MSSQL_PASSWORD").context("MSSQL_PASSWORD not set")?;
+    /// `APP_CONFIG` is guaranteed to be fully initialized before this is called
+    /// because `main()` accesses it before constructing the repository.
+    pub fn new() -> Self {
+        // Clone connection settings from the already-validated global config
+        let cfg: &AppConfig = &*APP_CONFIG;
 
-        // Default to trusting the server certificate when the variable is absent
-        let trust_cert = env::var("MSSQL_TRUST_SERVER_CERTIFICATE")
-            .unwrap_or("true".to_string())
-            .to_lowercase() == "true";
-
-        Ok(Self { server, port, database, username, password, trust_cert })
+        Self {
+            server:     cfg.mssql_server.clone(),
+            port:       cfg.mssql_port,
+            database:   cfg.mssql_database.clone(),
+            username:   cfg.mssql_username.clone(),
+            password:   cfg.mssql_password.clone(),
+            trust_cert: cfg.mssql_trust_server_certificate,
+        }
     }
 
     /// Builds a `mssql_client::Config` from the stored connection settings.
@@ -146,7 +113,10 @@ impl SqlServerRepositoryImpl {
             .port(self.port)
             .database(&self.database)
             // Use SQL Server login authentication
-            .credentials(Credentials::sql_server(self.username.clone(), self.password.clone()))
+            .credentials(Credentials::sql_server(
+                self.username.clone(),
+                self.password.clone(),
+            ))
             // Optionally disable TLS certificate validation (useful in dev/test environments)
             .trust_server_certificate(self.trust_cert)
     }
@@ -190,8 +160,70 @@ impl SqlServerRepository for SqlServerRepositoryImpl {
         // Attempt to open a connection; drop it right after to free the resource
         let _client: Client<Ready> = self.get_client().await?;
 
-        info!("[SqlServerRepositoryImpl::test_connection] SQL Server connection established successfully");
+        info!(
+            "[SqlServerRepositoryImpl::test_connection] SQL Server connection established successfully"
+        );
 
         Ok(())
+    }
+
+    /// Executes `usp_sample_proc` and maps each returned row to [`SampleProcResponseDto`].
+    ///
+    /// Parameters are passed as positional placeholders (`@p1`, `@p2`) via
+    /// `sp_executesql` so the values are never interpolated into the SQL string,
+    /// preventing SQL injection.
+    ///
+    /// Column mapping (by index):
+    /// | Index | Column           | Type           |
+    /// |-------|------------------|----------------|
+    /// | 0     | `result_code`    | `INT`          |
+    /// | 1     | `result_message` | `NVARCHAR`     |
+    /// | 2     | `result_value`   | `FLOAT` / NULL |
+    async fn call_proc_sample(
+        &self,
+        req: &SampleProcRequestDto,
+    ) -> Result<Vec<SampleProcResponseDto>> {
+        let mut client: Client<Ready> = self.get_client().await?;
+
+        // Positional parameters: @p1 → input_id, @p2 → input_name
+        let rows = client
+            .query(
+                "EXEC usp_sample_proc @input_id = @p1, @input_name = @p2",
+                &[&req.input_id, &req.input_name.as_str()],
+            )
+            .await
+            .context("[SqlServerRepositoryImpl::call_proc_sample] Failed to execute usp_sample_proc")?;
+
+        let mut result: Vec<SampleProcResponseDto> = Vec::new();
+
+        for row_result in rows {
+            let row = row_result
+                .context("[SqlServerRepositoryImpl::call_proc_sample] Failed to read row")?;
+
+            // Non-nullable columns: use get() which returns Result<T, TypeError>
+            let result_code: i32 = row
+                .get(0)
+                .context("[SqlServerRepositoryImpl::call_proc_sample] Failed to read result_code (index 0)")?;
+
+            let result_message: String = row
+                .get(1)
+                .context("[SqlServerRepositoryImpl::call_proc_sample] Failed to read result_message (index 1)")?;
+
+            // Nullable column: use try_get() which returns Option<T>
+            let result_value: Option<f64> = row.try_get(2);
+
+            result.push(SampleProcResponseDto {
+                result_code,
+                result_message,
+                result_value,
+            });
+        }
+
+        info!(
+            "[SqlServerRepositoryImpl::call_proc_sample] usp_sample_proc returned {} row(s)",
+            result.len()
+        );
+
+        Ok(result)
     }
 }

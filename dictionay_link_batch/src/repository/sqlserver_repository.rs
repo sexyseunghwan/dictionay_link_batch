@@ -34,8 +34,11 @@
 //! | `MSSQL_PASSWORD`                | Login password                       | `your_password` |
 //! | `MSSQL_TRUST_SERVER_CERTIFICATE`| Whether to trust the server cert     | `true`          |
 
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
+
+use crate::dtos::sample_proc_dto::{SampleProcRequestDto, SampleProcResponseDto};
+
 
 /// Trait defining SQL Server repository operations.
 ///
@@ -63,4 +66,23 @@ pub trait SqlServerRepository: Send + Sync {
     /// - The SQL Server is unreachable
     /// - Authentication fails
     async fn test_connection(&self) -> Result<()>;
+
+    /// Calls `usp_sample_proc` with the given input parameters and returns all result rows.
+    ///
+    /// # Arguments
+    ///
+    /// * `req` — input parameters for the stored procedure
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Vec<SampleProcResponseDto>)` with one element per returned row.
+    /// Returns an empty `Vec` if the procedure produces no rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection fails or the procedure raises an exception.
+    async fn call_proc_sample(
+        &self,
+        req: &SampleProcRequestDto,
+    ) -> Result<Vec<SampleProcResponseDto>>;
 }
