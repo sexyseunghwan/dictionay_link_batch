@@ -1,0 +1,6 @@
+*.env
+*.log
+target/
+test/
+datas/
+socket/
