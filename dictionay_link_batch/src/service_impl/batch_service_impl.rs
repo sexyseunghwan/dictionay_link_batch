@@ -16,13 +16,13 @@ where
     sql_server_repo: Arc<S>
 }
 
+
 impl<S> BatchServiceImpl<S>
 where 
     S: SqlServerRepository
 {
     
 }
-
 
 
 #[async_trait]

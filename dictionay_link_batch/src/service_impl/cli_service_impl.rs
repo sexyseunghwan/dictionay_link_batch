@@ -11,3 +11,10 @@ use crate::service::cli_service::*;
 pub struct CliServiceImpl {
     
 }
+
+
+#[async_trait]
+impl CliService for CliServiceImpl
+{
+
+}
