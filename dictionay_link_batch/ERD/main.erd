@@ -4,8 +4,8 @@
   "settings": {
     "width": 2000,
     "height": 2000,
-    "scrollTop": 0,
-    "scrollLeft": -72,
+    "scrollTop": -3,
+    "scrollLeft": -212,
     "zoomLevel": 1,
     "show": 431,
     "database": 4,
@@ -767,18 +767,18 @@
         "tableId": "bJ6ZfijRWYtJ1UhmYSjgS",
         "name": "DICTYPENAME",
         "comment": "사전 구분 값(한글)",
-        "dataType": "VARCHAR(50)",
+        "dataType": "VARCHAR(100)",
         "default": "",
         "options": 8,
         "ui": {
           "keys": 0,
           "widthName": 81,
           "widthComment": 100,
-          "widthDataType": 75,
+          "widthDataType": 81,
           "widthDefault": 60
         },
         "meta": {
-          "updateAt": 1774416045956,
+          "updateAt": 1774851928184,
           "createAt": 1774415998830
         }
       },
